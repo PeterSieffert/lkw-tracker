@@ -6,8 +6,6 @@ import base64
 import os
 
 # --- KONFIGURATION ---
-# Falls der untere Teil (Statistik) die Karte verdeckt, erhöhe diesen Wert.
-# Habe ihn von 400 auf 420 erhöht, da wir den Titel nach unten geschoben haben.
 HEADER_HEIGHT_PIXELS = 420
 
 def get_base64_of_bin_file(bin_file):
@@ -37,7 +35,6 @@ def process_gpx_data(file):
 def main():
     st.set_page_config(page_title="LKW Touren Viewer", page_icon="🚚", layout="wide")
     
-    # Logo laden
     logo_filename = "movisl.jpg"
     logo_base64 = ""
     if os.path.exists(logo_filename):
@@ -49,7 +46,7 @@ def main():
             /* Grundfarbe */
             .stApp {{ background-color: #2654aa; }}
             
-            /* 1. DER WEISSE LOGO-BALKEN (Ganz oben, fixiert) */
+            /* 1. Header */
             .header {{
                 position: fixed;
                 top: 0;
@@ -65,7 +62,7 @@ def main():
             }}
             .header img {{ height: 60px; width: auto; }}
 
-            /* 2. DER BLAUE KONTROLL-BEREICH (Fixiert unter dem Logo) */
+            /* 2. Fixierter blauer Bereich */
             div[data-testid="stVerticalBlock"] > div:has(div#fixed-controls-anchor) {{
                 position: fixed;
                 top: 80px; 
@@ -76,13 +73,9 @@ def main():
                 padding-left: 5rem;
                 padding-right: 5rem;
                 padding-bottom: 20px;
-                /* --- ÄNDERUNG HIER: Schatten und Rahmen entfernt --- */
-                /* border-bottom: 1px solid rgba(255,255,255,0.2); */
-                /* box-shadow: 0 4px 6px rgba(0,0,0,0.3); */
-                /* --------------------------------------------------- */
             }}
 
-            /* 3. PLATZ FÜR DEN INHALT SCHAFFEN */
+            /* 3. Platzhalter oben */
             .block-container {{
                 padding-top: {HEADER_HEIGHT_PIXELS}px !important;
             }}
@@ -92,7 +85,7 @@ def main():
             .stWarning {{ color: black !important; }} .stWarning p {{ color: black !important; }}
             .stAppDeployButton, header, #MainMenu, footer {{ visibility: hidden; }}
 
-            /* Upload Texte anpassen */
+            /* Upload Texte */
             [data-testid='stFileUploader'] section > div > div > span,
             [data-testid='stFileUploader'] section > div > div > small {{ display: none; }}
             [data-testid='stFileUploader'] section > div > div::after {{
@@ -104,28 +97,52 @@ def main():
                 font-weight: bold;
                 margin-top: 10px;
             }}
+            
+            /* --- UPDATE: DOWNLOAD BUTTON LINKSBÜNDIG --- */
+            div[data-testid="stDownloadButton"] {{
+                text-align: left; /* Linksbündig */
+                margin-top: 10px;
+            }}
+            div[data-testid="stDownloadButton"] > button {{
+                background-color: white !important;
+                color: #2654aa !important; /* Blaue Schrift */
+                border: 2px solid white !important;
+                font-weight: bold !important;
+                padding: 10px 20px !important;
+                border-radius: 8px !important;
+                transition: all 0.3s;
+                width: auto !important; /* Automatische Breite, nicht voll */
+                min-width: 300px; /* Mindestbreite für gute Optik */
+            }}
+            div[data-testid="stDownloadButton"] > button:hover {{
+                background-color: #f0f0f0 !important;
+                transform: translateY(-2px);
+                color: #2654aa !important; /* Bleibt Blau beim Hover */
+            }}
+            /* Wir stellen sicher, dass auch der Text im Button (p tag) blau ist */
+            div[data-testid="stDownloadButton"] > button p {{
+                color: #2654aa !important;
+            }}
         </style>
     """, unsafe_allow_html=True)
 
-    # --- 1. LOGO HEADER (HTML) ---
+    # --- HEADER ---
     if logo_base64:
         st.markdown(f'<div class="header"><img src="data:image/jpeg;base64,{logo_base64}"></div>', unsafe_allow_html=True)
     else:
         st.markdown('<div class="header"><h2 style="color:#2654aa!important">movis</h2></div>', unsafe_allow_html=True)
 
-    # --- 2. FIXIERTER KONTROLL-BEREICH ---
+    # --- FIXIERTER BEREICH ---
     with st.container():
         st.markdown('<div id="fixed-controls-anchor"></div>', unsafe_allow_html=True)
-        
-        # --- ÄNDERUNG HIER: margin-top: 20px ---
         st.markdown("<h2 style='text-align: center; color: white; margin-top: 20px;'>🚚 LKW Touren Viewer</h2>", unsafe_allow_html=True)
-        # ---------------------------------------
         
         uploaded_file = st.file_uploader("Wähle eine GPX Datei", type=['gpx'])
 
         points = []
         dist_km = 0
         avg_speed = 0
+        m = None 
         
         if uploaded_file is not None:
             try:
@@ -134,26 +151,41 @@ def main():
                 st.error(f"Fehler: {e}")
 
         if points:
+            # 1. Statistiken
             col1, col2 = st.columns(2)
             with col1:
                 st.markdown(f"<h3 style='color: white; text-align: center; background: rgba(255,255,255,0.1); padding: 10px; border-radius: 10px;'>📏 Distanz: {dist_km:.2f} km</h3>", unsafe_allow_html=True)
             with col2:
                 speed_text = f"{avg_speed:.1f} km/h" if avg_speed > 0 else "-"
                 st.markdown(f"<h3 style='color: white; text-align: center; background: rgba(255,255,255,0.1); padding: 10px; border-radius: 10px;'>🚚 Ø Geschw.: {speed_text}</h3>", unsafe_allow_html=True)
+
+            # 2. Karte erstellen
+            mid_index = len(points) // 2
+            center_coords = points[mid_index]
+            m = folium.Map(location=center_coords, zoom_start=12)
+            folium.PolyLine(points, color="red", weight=5, opacity=0.8).add_to(m)
+            folium.Marker(points[0], popup="Start", icon=folium.Icon(color="green", icon="play")).add_to(m)
+            folium.Marker(points[-1], popup="Ziel", icon=folium.Icon(color="black", icon="flag")).add_to(m)
+
+            # 3. Der Button (Jetzt LINKSBÜNDIG ohne Spalten)
+            st.markdown("<br>", unsafe_allow_html=True) 
+            
+            # Wir holen den HTML-Code der Karte
+            map_html = m.get_root().render()
+            
+            # Der Download Button direkt im Flow (links)
+            st.download_button(
+                label="🌍 Karte für 2. Monitor speichern (Vollbild)",
+                data=map_html,
+                file_name="LKW_Tour_Karte.html",
+                mime="text/html"
+            )
+
         else:
             st.markdown("<div style='height: 20px'></div>", unsafe_allow_html=True)
 
-    # --- 3. SCROLLBARER BEREICH (Karte) ---
-    if uploaded_file is not None and points:
-        mid_index = len(points) // 2
-        center_coords = points[mid_index]
-        
-        m = folium.Map(location=center_coords, zoom_start=12)
-        
-        folium.PolyLine(points, color="red", weight=5, opacity=0.8).add_to(m)
-        folium.Marker(points[0], popup="Start", icon=folium.Icon(color="green", icon="play")).add_to(m)
-        folium.Marker(points[-1], popup="Ziel", icon=folium.Icon(color="black", icon="flag")).add_to(m)
-
+    # --- SCROLLBARER BEREICH (Vorschau-Karte) ---
+    if m is not None:
         st_folium(m, use_container_width=True, height=800)
 
 if __name__ == "__main__":
