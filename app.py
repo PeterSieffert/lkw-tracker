@@ -15,7 +15,7 @@ def get_base64_of_bin_file(bin_file):
     return base64.b64encode(data).decode()
 
 def process_gpx_data(file):
-    """Liest GPX Daten sicher aus."""
+    """Liest GPX Daten sicher aus (inklusive Datum)."""
     gpx = gpxpy.parse(file)
     points = []
     
@@ -40,23 +40,29 @@ def process_gpx_data(file):
     else:
         avg_speed = 0.0
 
-    # 3. Zeit sicher ermitteln
+    # 3. Zeit & Datum sicher ermitteln
     start_time_str = "-"
     end_time_str = "-"
+    date_str = "" # Leeres Datum als Standard
     
     try:
         bounds = gpx.get_time_bounds()
         if bounds.start_time and bounds.end_time:
-            # +2 Stunden Korrektur
+            # +2 Stunden Korrektur (Sommerzeit / UTC Offset)
             t_start = bounds.start_time + timedelta(hours=2)
             t_end = bounds.end_time + timedelta(hours=2)
             
+            # Zeit formatieren (HH:MM Uhr)
             start_time_str = t_start.strftime("%H:%M Uhr")
             end_time_str = t_end.strftime("%H:%M Uhr")
+            
+            # Datum formatieren (TT.MM.JJJJ)
+            date_str = t_start.strftime("%d.%m.%Y")
     except Exception:
         pass
 
-    return points, dist_km, avg_speed, start_time_str, end_time_str
+    # Wir geben jetzt 6 Werte zurück (Datum ist neu)
+    return points, dist_km, avg_speed, start_time_str, end_time_str, date_str
 
 def main():
     st.set_page_config(page_title="LKW Touren Viewer", page_icon="🚚", layout="wide")
@@ -72,17 +78,9 @@ def main():
             /* Grundfarbe */
             .stApp {{ background-color: #2654aa; }}
             
-            /* --- NEU: HIDE ANCHOR LINKS (Die Kettensymbole verstecken) --- */
-            /* Versteckt alle Links innerhalb von Überschriften (h1 bis h6) */
-            h1 > a, h2 > a, h3 > a, h4 > a, h5 > a, h6 > a {{
-                display: none !important;
-            }}
-            /* Zur Sicherheit auch die Streamlit-spezifischen Klassen */
-            .anchor-link, [data-testid="stMarkdownContainer"] a {{
-                text-decoration: none !important;
-                display: none !important;
-            }}
-            /* ------------------------------------------------------------- */
+            /* Hide Anchor Links */
+            h1 > a, h2 > a, h3 > a, h4 > a, h5 > a, h6 > a {{ display: none !important; }}
+            .anchor-link, [data-testid="stMarkdownContainer"] a {{ text-decoration: none !important; display: none !important; }}
 
             /* Header */
             .header {{
@@ -183,28 +181,42 @@ def main():
         avg_speed = 0
         start_time = "-"
         end_time = "-"
+        date_str = ""
         m = None 
-        tour_nummer_text = ""
+        tour_info_line = "" # Variable für den kombinierten Text (Nummer + Datum)
         
         if uploaded_file is not None:
-            # --- LOGIK FÜR TOURNUMMER ---
-            filename = uploaded_file.name
-            if filename.startswith("DL") and filename.lower().endswith(".gpx"):
-                nummer = filename[2:-4]
-                tour_nummer_text = f"Tournummer: {nummer}"
-            # ---------------------------
-
+            # 1. GPX Daten verarbeiten
             try:
-                points, dist_km, avg_speed, start_time, end_time = process_gpx_data(uploaded_file)
+                # Jetzt mit date_str Rückgabewert
+                points, dist_km, avg_speed, start_time, end_time, date_str = process_gpx_data(uploaded_file)
                 if not points:
                     st.error("Keine Wegpunkte in dieser Datei gefunden.")
             except Exception as e:
                 st.error(f"Fehler beim Lesen der Datei: {e}")
 
-        # Anzeige der Tournummer
-        if tour_nummer_text:
-            st.markdown(f"<h3 style='text-align: center; color: white; margin-bottom: 15px;'>{tour_nummer_text}</h3>", unsafe_allow_html=True)
-        elif uploaded_file is not None and not tour_nummer_text:
+            # 2. Text für Tournummer und Datum bauen
+            filename = uploaded_file.name
+            parts = []
+            
+            # Prüfen ob DL-Nummer
+            if filename.startswith("DL") and filename.lower().endswith(".gpx"):
+                nummer = filename[2:-4]
+                parts.append(f"Tournummer: {nummer}")
+            
+            # Prüfen ob Datum vorhanden
+            if date_str:
+                parts.append(f"Datum: {date_str}")
+            
+            # Zusammenfügen mit Trennzeichen (Punkt oder Strich)
+            if parts:
+                tour_info_line = " &nbsp;•&nbsp; ".join(parts)
+
+
+        # Anzeige der Info-Zeile (Nummer & Datum)
+        if tour_info_line:
+            st.markdown(f"<h3 style='text-align: center; color: white; margin-bottom: 15px;'>{tour_info_line}</h3>", unsafe_allow_html=True)
+        elif uploaded_file is not None and not tour_info_line:
             st.markdown("<div style='height: 10px'></div>", unsafe_allow_html=True)
 
 
@@ -214,19 +226,12 @@ def main():
             
             box_style = "color: white; text-align: center; background: rgba(255,255,255,0.1); padding: 10px; border-radius: 10px;"
             
-            # 1. Start (Mit Icon)
             with col1:
                 st.markdown(f"<div style='{box_style}'><h3>⏱️ Start</h3><h3>{start_time}</h3></div>", unsafe_allow_html=True)
-            
-            # 2. Ende (Mit Icon)
             with col2:
                 st.markdown(f"<div style='{box_style}'><h3>🏁 Ende</h3><h3>{end_time}</h3></div>", unsafe_allow_html=True)
-
-            # 3. Distanz (Mit Icon)
             with col3:
                 st.markdown(f"<div style='{box_style}'><h3>📏 Distanz</h3><h3>{dist_km:.2f} km</h3></div>", unsafe_allow_html=True)
-            
-            # 4. Geschwindigkeit (Mit Icon)
             with col4:
                 speed_text = f"{avg_speed:.1f} km/h" if avg_speed > 0 else "-"
                 st.markdown(f"<div style='{box_style}'><h3>🚚 Ø Geschw.</h3><h3>{speed_text}</h3></div>", unsafe_allow_html=True)
@@ -249,7 +254,6 @@ def main():
                 file_name="LKW_Tour_Karte.html",
                 mime="text/html"
             )
-            # Erklärungstext
             st.markdown("""
                 <p style='color: #ddd; font-size: 0.9em; margin-top: 5px;'>
                 ℹ️ <b>Hinweis:</b> Die Karte wird im Download-Ordner gespeichert. Bitte öffne die Datei von dort manuell (kein automatischer Start).
